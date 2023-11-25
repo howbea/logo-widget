@@ -2,10 +2,6 @@
 /*
  * Copyright 2014 Red Hat, Inc
  *
- * This is forked from https://src.fedoraproject.org/rpms/gnome-shell-extension-background-logo
- * Name: Background Logo  Contributors: Florian Müllner 
- *
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2, or (at your option)
@@ -19,21 +15,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-import Clutter from 'gi://Clutter';
-import Gio from 'gi://Gio';
-import GLib from 'gi://GLib';
-import GObject from 'gi://GObject';
-import Meta from 'gi://Meta';
-import St from 'gi://St';
+const { Clutter, Gio, GLib, GObject, Meta, St } = imports.gi;
 
-import {Extension, InjectionManager, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
-
-import * as Background from 'resource:///org/gnome/shell/ui/background.js';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as Workspace from 'resource:///org/gnome/shell/ui/workspace.js';
+const Background = imports.ui.background;
+const ExtensionUtils = imports.misc.extensionUtils;
+const Main = imports.ui.main;
 
 var IconContainer = GObject.registerClass(
 class IconContainer extends St.Widget {
+    _init(params) {
+        super._init(params);
+    }
+
     vfunc_get_preferred_width(forHeight) {
         let width = super.vfunc_get_preferred_width(forHeight);
         return width.map(w => w * this.scale_x);
@@ -45,15 +38,15 @@ class IconContainer extends St.Widget {
     }
 });
 
-var WidgetLogo = GObject.registerClass(
-class WidgetLogo extends St.Widget {
-    _init(backgroundActor, settings) {
+var BackgroundLogo = GObject.registerClass(
+class BackgroundLogo extends St.Widget {
+    _init(backgroundActor) {
         this._backgroundActor = backgroundActor;
         this._monitorIndex = this._backgroundActor.monitor;
 
         this._logoFile = null;
-        
-        this._settings = settings;
+
+        this._settings = ExtensionUtils.getSettings();
         this._ifaceSettings = new Gio.Settings({
             schema_id: 'org.gnome.desktop.interface',
         });
@@ -67,11 +60,11 @@ class WidgetLogo extends St.Widget {
         else {
         this._settings.connect('changed::logo-file',
             this._updateLogo.bind(this));
-        }        
-        this._settings.connect('changed::logo-size', () => {
-            this._updateScale();
-            this.queue_relayout();
-        });
+        }
+        this._settings.connect('changed::logo-size',
+            this._updateScale.bind(this));
+        this._settings.connect('changed::logo-size',
+            this.queue_relayout.bind(this));
         this._settings.connect('changed::logo-position',
             this._updatePosition.bind(this));
         this._settings.connect('changed::logo-border',
@@ -105,7 +98,7 @@ class WidgetLogo extends St.Widget {
         this._backgroundActor.content.connect('notify::brightness',
             this._updateOpacity.bind(this));
 
-        this._bin = new IconContainer({x_expand: true, y_expand: true});
+        this._bin = new IconContainer({ x_expand: true, y_expand: true });
         if (this._settings.get_boolean('overview-visible')) {
             this.add_actor(this._bin);
         }
@@ -162,12 +155,12 @@ class WidgetLogo extends St.Widget {
             this._settings.get_uint('logo-opacity') * brightness;
     }
 
-    _getMonitorArea() {
-        return Main.layoutManager.monitors[this._monitorIndex];
+    _getWorkArea() {
+        return Main.layoutManager.getWorkAreaForMonitor(this._monitorIndex);
     }
 
     _getWidthForRelativeSize(size) {
-        let {width} = this._getMonitorArea();
+        let { width } = this._getWorkArea();
         return width * size / 100;
     }
 
@@ -175,7 +168,7 @@ class WidgetLogo extends St.Widget {
         if (!this.has_allocation())
             return 1;
 
-        let {width} = this._getMonitorArea();
+        let { width } = this._getWorkArea();
         return this.allocation.get_width() / width;
     }
 
@@ -224,7 +217,7 @@ class WidgetLogo extends St.Widget {
         else
             yAlign = Clutter.ActorAlign.CENTER;
 
-        this._bin.set({xAlign, yAlign});
+        this._bin.set({ xAlign, yAlign });
     }
 
     _updateBorder() {
@@ -239,7 +232,7 @@ class WidgetLogo extends St.Widget {
     }
 
     _updateVisibility() {
-        const {background} = this._backgroundActor.content;
+        const { background } = this._backgroundActor.content;
         const colorScheme = this._ifaceSettings.get_string('color-scheme');
         const uriKey = colorScheme === 'prefer-dark'
             ? 'picture-uri-dark'
@@ -268,8 +261,7 @@ class WidgetLogo extends St.Widget {
         if (this._laterId)
             return;
 
-        const laters = global.compositor.get_laters();
-        this._laterId = laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+        this._laterId = Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
             this._updateScale();
             this._updateBorder();
 
@@ -280,20 +272,17 @@ class WidgetLogo extends St.Widget {
 
     _onDestroy() {
         if (this._laterId)
-            global.compositor.get_laters().remove(this._laterId);
+            Meta.later_remove(this._laterId);
         this._laterId = 0;
-
         this._backgroundActor.layout_manager = null;
         this._settings = null;
-
         this._logoFile = null;
     }
 });
 
 
-export default class LogoWidgetExtension extends Extension {
-    constructor(metadata) {
-        super(metadata);
+class Extension {
+    constructor() {        
     }
 
     _reloadBackgrounds() {
@@ -301,25 +290,25 @@ export default class LogoWidgetExtension extends Extension {
     }
 
     enable() {
-        const LWEsettings = this.getSettings();
-        this._injectionManager = new InjectionManager();
-        const bgMgrProto = Background.BackgroundManager.prototype;
-        this._injectionManager.overrideMethod(bgMgrProto, '_createBackgroundActor', originalMethod => {
-            /* eslint-disable no-invalid-this */
-            return function () {
-                const backgroundActor = originalMethod.call(this);
-                const logo_ = new WidgetLogo(backgroundActor, LWEsettings);
+        this._bgManagerProto = Background.BackgroundManager.prototype;
+        this._createBackgroundOrig = this._bgManagerProto._createBackgroundActor;
+        const { _createBackgroundOrig } = this;
+        this._bgManagerProto._createBackgroundActor = function () {
+            const backgroundActor = _createBackgroundOrig.call(this);
+            const logo_ = new BackgroundLogo(backgroundActor);
 
-                return backgroundActor;
-            };
-            /* eslint-enable */
-        });
+            return backgroundActor;
+        };
         this._reloadBackgrounds();
     }
 
     disable() {
-        this._injectionManager.clear();
-        this._injectionManager = null;
+        this._bgManagerProto._createBackgroundActor = this._createBackgroundOrig;
         this._reloadBackgrounds();
     }
+}
+
+/** */
+function init() {
+    return new Extension();
 }
