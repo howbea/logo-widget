@@ -110,8 +110,12 @@ class WidgetLogo extends St.Widget {
             this.add_actor(this._bin);
         }
         else {
-        if (!Main.overview.visible)
-            this.add_actor(this._bin);
+        this.add_actor(this._bin);
+        if (Main.overview.visible)
+           this._bin.visible = false;
+        this._hiddenSignal = Main.overview.connect('hidden', () => {
+            this._bin.visible = true;
+            });        
         }
         this._bin.connect('resource-scale-changed',
             this._updateLogoTexture.bind(this));
@@ -287,6 +291,11 @@ class WidgetLogo extends St.Widget {
         this._settings = null;
 
         this._logoFile = null;
+        
+        if (this._hiddenSignal) {
+            Main.overview.disconnect(this._hiddenSignal);
+            this._hiddenSignal = null;
+        }
     }
 });
 

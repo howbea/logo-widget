@@ -34,7 +34,7 @@
     </key>
     <key type="d" name="logo-size">
       <range min="5.0" max="15.0"/>
-      <default>9.0</default>
+      <default>10.0</default>
       <summary>Logo size</summary>
       <description>The logo size in percent relative to the screen width</description>
     </key>
